@@ -1,0 +1,40 @@
+name:           gtfs2graph
+version:        0.1.0
+homepage:       https://github.com/mocnik-science/gtfs2graph
+bug-reports:    https://github.com/mocnik-science/gtfs2graph/issues
+synopsis:       A command line application to convert a GTFS transit feed into different graph formats
+description:
+  The command line application gtfs2graph converts a General Transit Feed
+  Specification (GTFS) transit feed into different graph formats
+license:        GPL-3
+license-file:   LICENSE.md
+author:         Franz-Benjamin Mocnik <mail@mocnik-science.net>
+maintainer:     Franz-Benjamin Mocnik <mail@mocnik-science.net>
+copyright:      2015-2016 Franz-Benjamin Mocnik
+category:       Geo, GTFS, Graph, Network
+cabal-version:  >= 1.20
+build-type:     Simple
+extra-source-files:
+  README.md
+
+executable gtfs2graph
+  hs-source-dirs:
+  main-is: gtfs2graph.hs
+  default-language: Haskell2010
+  ghc-options:
+    -Wall
+    -O2
+    -threaded
+    -with-rtsopts=-N
+  build-depends:
+    base,
+    bytestring,
+    cassava,
+    chorale >= 0.1.7,
+    chorale-geo >= 0.1.2,
+    cmdargs,
+    MissingH,
+    pcre-utils,
+    stringsearch,
+    text,
+    vector
