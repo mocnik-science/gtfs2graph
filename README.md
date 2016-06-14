@@ -6,7 +6,9 @@ The command line application `gtfs2graph` converts a [General Transit Feed Speci
 
 [![Washington, DC, USA](https://github.com/mocnik-science/gtfs2graph/blob/master/examples/usa-dc-washington.png)](https://github.com/mocnik-science/gtfs2graph/blob/master/examples/usa-dc-washington.pdf)
 
-`gtfs2graph svg data/usa-dc-washington --line-width=4 --title="WASHINGTON, DC, USA"`
+```
+gtfs2graph svg data/usa-dc-washington --line-width=4 --title="WASHINGTON, DC, USA"
+```
 
 Visualization: [PDF](https://github.com/mocnik-science/gtfs2graph/blob/master/examples/usa-dc-washington.pdf) /
 GraphML: [GraphML](https://github.com/mocnik-science/gtfs2graph/blob/master/examples/usa-dc-washington.graphml) /
@@ -14,7 +16,9 @@ GTFS data: [www.transitfeeds.com](http://www.transitfeeds.com/p/wmata/75/2016060
 
 [![Albuquerque, NM, USA](https://github.com/mocnik-science/gtfs2graph/blob/master/examples/usa-nm-albuquerque.png)](https://github.com/mocnik-science/gtfs2graph/blob/master/examples/usa-nm-albuquerque.pdf)
 
-`gtfs2graph svg data/usa-nm-albuquerque --color=red --color=blue --color=yellow --weights-line-width=3 --weights-brighten=0.8 --weights-opacity-min=0.3 --background-color=black --title="ALBUQUERQUE, NM, USA" --title-color=#ddd --title-font=Helvetica`
+```
+gtfs2graph svg data/usa-nm-albuquerque --color=red --color=blue --color=yellow --weights-line-width=3 --weights-brighten=0.8 --weights-opacity-min=0.3 --background-color=black --title="ALBUQUERQUE, NM, USA" --title-color=#ddd --title-font=Helvetica
+```
 
 Visualization: [PDF](https://github.com/mocnik-science/gtfs2graph/blob/master/examples/usa-nm-albuquerque.pdf) /
 GraphML: [GraphML](https://github.com/mocnik-science/gtfs2graph/blob/master/examples/usa-nm-albuquerque.graphml) /
@@ -22,7 +26,9 @@ GTFS data: [www.transitfeeds.com](http://www.transitfeeds.com/p/chicago-transit-
 
 [![San Francisco, CA, USA](https://github.com/mocnik-science/gtfs2graph/blob/master/examples/usa-ca-san-francisco.png)](https://github.com/mocnik-science/gtfs2graph/blob/master/examples/usa-ca-san-francisco.pdf)
 
-`gtfs2graph svg data/usa-ca-san-francisco --no-shape --line-width=0 --background-color="" --color=black --one-color-per-file --weights-line-width=0 --weights-brighten=0 --weights-opacity-min=1 --size=1`
+```
+gtfs2graph svg data/usa-ca-san-francisco --no-shape --line-width=0 --background-color="" --color=black --one-color-per-file --weights-line-width=0 --weights-brighten=0 --weights-opacity-min=1 --size=1
+```
 
 Visualization: [PDF](https://github.com/mocnik-science/gtfs2graph/blob/master/examples/usa-ca-san-francisco.pdf) /
 GraphML: [GraphML](https://github.com/mocnik-science/gtfs2graph/blob/master/examples/usa-ca-san-francisco.graphml) /
