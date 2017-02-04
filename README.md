@@ -36,7 +36,7 @@ GTFS data: [www.transitfeeds.com](http://www.transitfeeds.com/p/sfmta/60/2016052
 
 ## Installation
 
-To install gtfs2graph, [Haskell](https://www.haskell.org/platform/) needs to be installed. Then execute:
+To install `gtfs2graph`, [Haskell](https://www.haskell.org/platform/) needs to be installed. Then execute:
 ```
 mkdir gtfs2graph && cd gtfs2graph
 wget https://github.com/mocnik-science/gtfs2graph/archive/master.zip
