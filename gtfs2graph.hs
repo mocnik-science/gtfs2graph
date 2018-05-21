@@ -90,10 +90,10 @@ main :: IO ()
 main = do
     s <- modifySetting <$> cmdArgsRun argsMode
     case s of
-        GraphML { paths = ps, weightType = TravelTime } -> testForPaths ps $ writeGraphML (head ps) =<< concat <$> mapM (\p -> uncurryM3 makeEdgesWeightedByTravelTime (gtfsRead s stopTimes p, gtfsRead s trips p, gtfsRead s routes p)) ps
+        GraphML { paths = ps, weightType = TravelTime } -> testForPaths ps $ writeGraphML (head ps) =<< concat <$> mapM (\p -> uncurryM4 makeEdgesWeightedByTravelTime (gtfsRead s stopTimes p, gtfsRead s stops p, gtfsRead s trips p, gtfsRead s routes p)) ps
         GraphML { paths = ps, weightType = NetworkDistance } -> testForPaths ps $ writeGraphML (head ps) =<< concat <$> mapM (\p -> uncurryM5 makeEdgesWeightedByNetworkDistance (gtfsRead s stopTimes p, gtfsRead s stops p, gtfsRead s trips p, gtfsRead s routes p, gtfsRead s shapes p)) ps
         GraphML { paths = ps, weightType = DistanceInSpace } -> testForPaths ps $ writeGraphML (head ps) =<< concat <$> mapM (\p -> uncurryM4 makeEdgesWeightedByDistanceInSpace (gtfsRead s stopTimes p, gtfsRead s stops p, gtfsRead s trips p, gtfsRead s routes p)) ps
-        SVG { paths = ps, no_shape = True } -> testForPaths ps $ writeSvg s (head ps ++ "-no-shape") =<< mapM (\p -> uncurryM2 (edgesWithLocalCoordinates .* edgesWithCoordinates) (gtfsRead s stops p, uncurryM3 makeEdgesWeightedByTravelTime (gtfsRead s stopTimes p, gtfsRead s trips p, gtfsRead s routes p))) ps
+        SVG { paths = ps, no_shape = True } -> testForPaths ps $ writeSvg s (head ps ++ "-no-shape") =<< mapM (\p -> uncurryM2 (edgesWithLocalCoordinates .* edgesWithCoordinates) (gtfsRead s stops p, map (mapEdge snd) <$> uncurryM4 makeEdgesWeightedByTravelTime (gtfsRead s stopTimes p, gtfsRead s stops p, gtfsRead s trips p, gtfsRead s routes p))) ps
         SVG { paths = ps, no_shape = False } -> testForPaths ps $ writeSvg s (head ps) =<< mapM (\p -> edgesWithLocalCoordinates <$> uncurryM5 makeEdgesShape (gtfsRead s stopTimes p, gtfsRead s stops p, gtfsRead s trips p, gtfsRead s routes p, gtfsRead s shapes p)) ps
 
 testForPaths :: [String] -> IO () -> IO ()
@@ -198,27 +198,27 @@ shapeCoordinatesPerTripLookupTable :: [Trip] -> [Shape] -> [(T.Text, [Coordinate
 shapeCoordinatesPerTripLookupTable ts shs = map (mapSnd fromJust) . filter (isJust . snd) . map (map21 (trip_id', flip lookup shapeCoordinatesPerShape . shape_id')) $ ts where
     shapeCoordinatesPerShape = map (mapSnd $ map shape_pt_coordinates . sortBy (comparing shape_pt_sequence)) . sortAndGroupLookupBy shape_id $ shs
 
-makeEdgesWeightedByFunction :: (T.Text -> [(StopTime, StopTime)] -> [((StopTime, StopTime), Double)]) -> [StopTime] -> [Trip] -> [Route] -> [Edge T.Text]
-makeEdgesWeightedByFunction dists sts ts rs = concatMap makeEdges' . sortAndGroupLookupBy trip_id $ sts where
+makeEdgesWeightedByFunction :: (T.Text -> [(StopTime, StopTime)] -> [((StopTime, StopTime), Double)]) -> [StopTime] -> [Stop] -> [Trip] -> [Route] -> [Edge (CoordinatesWGS84, T.Text)]
+makeEdgesWeightedByFunction dists sts ss ts rs = concatMap makeEdges' . sortAndGroupLookupBy trip_id $ sts where
     makeEdges' (t, es) = map (makeEdge' t) . dists t . uncurry zip . map21 (init, tail) . sortBy (comparing stop_sequence) $ es
-    makeEdge' t ((s1, s2), w) = Edge (stop_id s1, stop_id s2, w, routeTypeByTripId rtbtilt t)
+    makeEdge' t ((s1, s2), w) = Edge (mapFst (stopIdToCoordinates ss) . make2 . stop_id $ s1, mapFst (stopIdToCoordinates ss) . make2 . stop_id $ s2, w, routeTypeByTripId rtbtilt t)
     rtbtilt = routeTypeByTripIdLookupTable ts rs
 
-makeEdgesWeightedByFunction2 :: (StopTime -> StopTime -> Double) -> [StopTime] -> [Trip] -> [Route] -> [Edge T.Text]
+makeEdgesWeightedByFunction2 :: (StopTime -> StopTime -> Double) -> [StopTime] -> [Stop] -> [Trip] -> [Route] -> [Edge (CoordinatesWGS84, T.Text)]
 makeEdgesWeightedByFunction2 dist = makeEdgesWeightedByFunction dists where
     dists _ = map (\x -> (x, uncurry dist x))
 
-makeEdgesWeightedByTravelTime :: [StopTime] -> [Trip] -> [Route] -> [Edge T.Text]
+makeEdgesWeightedByTravelTime :: [StopTime] -> [Stop] -> [Trip] -> [Route] -> [Edge (CoordinatesWGS84, T.Text)]
 makeEdgesWeightedByTravelTime = makeEdgesWeightedByFunction2 dist where
     dist s1 s2 = (toSeconds arrival_time s2 + toSeconds departure_time s2 - toSeconds arrival_time s1 - toSeconds departure_time s1) / 2
     toSeconds f = (\[h, m, s] -> s + 60 * (m + 60 * h)) . map (fst . fromRight . T.double) . T.splitOn ":" . f
 
-makeEdgesWeightedByDistanceInSpace :: [StopTime] -> [Stop] -> [Trip] -> [Route] -> [Edge T.Text]
-makeEdgesWeightedByDistanceInSpace sts ss = makeEdgesWeightedByFunction2 dist sts where
+makeEdgesWeightedByDistanceInSpace :: [StopTime] -> [Stop] -> [Trip] -> [Route] -> [Edge (CoordinatesWGS84, T.Text)]
+makeEdgesWeightedByDistanceInSpace sts ss = makeEdgesWeightedByFunction2 dist sts ss where
     dist s1 s2 = uncurry distance . fromJust . listToTuple2 . map (stopIdToCoordinates ss . stop_id) $ [s1, s2]
 
-makeEdgesWeightedByNetworkDistance :: [StopTime] -> [Stop] -> [Trip] -> [Route] -> [Shape] -> [Edge T.Text]
-makeEdgesWeightedByNetworkDistance sts ss ts rs shs = makeEdgesWeightedByFunction dists sts ts rs where
+makeEdgesWeightedByNetworkDistance :: [StopTime] -> [Stop] -> [Trip] -> [Route] -> [Shape] -> [Edge (CoordinatesWGS84, T.Text)]
+makeEdgesWeightedByNetworkDistance sts ss ts rs shs = makeEdgesWeightedByFunction dists sts ss ts rs where
     dists t = case lookup t scptlt of
         Nothing -> const []
         Just shs' -> map (\x -> (x, dist x)) where
@@ -270,16 +270,18 @@ edgesWithLocalCoordinates = map (mapEdge $ transformWGS84toCartesian 12)
 
 -- --== GRAPML
 
-writeGraphML :: FilePath -> [Edge T.Text] -> IO ()
+writeGraphML :: FilePath -> [Edge (CoordinatesWGS84, T.Text)] -> IO ()
 writeGraphML p es = writeFile (p ++ ".graphml") . unlines $ cs where
     es' = map (minimumBy (comparing weight)) . sortAndGroupBy nodes $ es
     ns = nubOrd . concatMap (tupleToList2 . nodes) $ es'
     cs = ["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
         "<graphml xmlns=\"http://graphml.graphdrawing.org/xmlns\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd\">",
+        "<key id=\"lat\" for=\"node\" attr.name=\"lat\" attr.type=\"double\"/>",
+        "<key id=\"lon\" for=\"node\" attr.name=\"lon\" attr.type=\"double\"/>",
         "<key id=\"weight\" for=\"edge\" attr.name=\"weight\" attr.type=\"double\"/>",
         "<graph id=\"G\" edgedefault=\"directed\">"]
-        ++ map (\n -> "<node id=" ++ show n ++ "/>") ns
-        ++ map (\(Edge (n1, n2, w, _)) -> "<edge source=" ++ show n1 ++ " target=" ++ show n2 ++ "><data key=\"weight\">" ++ show w ++ "</data></edge>") es'
+        ++ map (\n -> "<node id=" ++ (show . snd) n ++ "><data key=\"lat\">" ++ (show . fst . toTuple . fst) n ++ "</data><data key=\"lon\">" ++ (show . snd . toTuple . fst) n ++ "</data></node>") ns
+        ++ map (\(Edge (n1, n2, w, _)) -> "<edge source=" ++ (show . snd) n1 ++ " target=" ++ (show . snd) n2 ++ "><data key=\"weight\">" ++ show w ++ "</data></edge>") es'
         ++ ["</graph>", "</graphml>"]
 
 -- --== SVG
