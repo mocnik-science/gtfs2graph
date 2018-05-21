@@ -50,11 +50,19 @@ cabal install
 
 Two different types of networks can be constructed:
 
-**Connectivity Network.** The nodes of the connectivity network represent stops and stations of the transit feed, and edges represent pairs of successive stops of the same trip.
+**Connectivity Network.** The nodes of the connectivity network represent stops and stations of the transit feed, and edges represent pairs of successive stops of the same trip. This network is saved as a GraphML file.
 
-**Shaped Network.** The shaped network represents, in addition to the connectivity network, information about the shape of the connections between the stops and stations.
+**Shaped Network.** The shaped network represents, in addition to the connectivity network, information about the shape of the connections between the stops and stations. This network is saved as a SVG file.
 
-The weights can be constructed in two different ways:
+In case of the connectivity network, the weights can be constructed in several ways:
+
+**Travel Time Weights.** The weights of the edges represent the travel time (the start point in time of the travel is defined as the arithmetic mean of the preceding arrival and the departure of the travel represented by the edge, and the end point as the mean of the arrival and the succeeding departure). When more than one edge is present, the one with the smallest weight is chosen.
+
+**Network distance.** The weights refer to the metric distance that needs to be travelled within the network.
+
+**Distance in space.** The weights refer to the metric distance that needs to be travelled within space, ignoring the network.
+
+In case of the shaped network, the weights can be constructed in two different ways:
 
 **Connection Weights.** The edge weights refer to the number of edges with the same start and end node, i.e. to the number of connections existing between two nodes.
 
@@ -64,7 +72,7 @@ Dependent on the file format chosen to export the data, different types of netwo
 
 The options can be explored by `gtfs2graph -h`:
 ```
-gtfs2graph, (C) Copyright 2015–2016 by Franz-Benjamin Mocnik
+gtfs2graph, (C) Copyright 2015–2018 by Franz-Benjamin Mocnik
 https://github.com/mocnik-science/gtfs2graph
 
 gtfs2graph [COMMAND] ... [OPTIONS]
@@ -78,6 +86,10 @@ Common flags:
 
 gtfs2graph graphml [OPTIONS] [DIR]
   convert one or more GTFS paths to a GraphML file
+
+  -w    --weighttype=WEIGHTTYPE     weights by TravelTime | NetworkDistance
+                                    (takes very long to compute) |
+                                    DistanceInSpace [TravelTime]
 
 gtfs2graph svg [OPTIONS] [DIR]
   convert a GTFS path to a SVG file
@@ -151,6 +163,6 @@ The colours used in the visualization refer, in case the option `--one-color-per
 
 This application is written and maintained by Franz-Benjamin Mocnik, <mail@mocnik-science.net>.
 
-(c) by Franz-Benjamin Mocnik, 2015–2016.
+(c) by Franz-Benjamin Mocnik, 2015–2018.
 
 The code is licensed under the [GPL-3](https://github.com/mocnik-science/gtfs2graph/blob/master/LICENSE.md).

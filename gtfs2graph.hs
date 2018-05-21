@@ -1,7 +1,7 @@
 -----------------------------------------------------------------------------
 --
 -- Module      :  gtfs2graph
--- Copyright   :  2015-2016 Franz-Benjamin Mocnik
+-- Copyright   :  2015-2018 Franz-Benjamin Mocnik
 --
 -- The command line application gtfs2graph converts a General Transit Feed
 -- Specification (GTFS) transit feed into different graph formats.
@@ -34,7 +34,9 @@ import System.Console.CmdArgs
 import Text.Printf
 import Text.Regex.PCRE.ByteString.Utils
 
-data Setting = GraphML { handle_broken_csv :: Bool, paths :: [String] }
+data WeightType = TravelTime | NetworkDistance | DistanceInSpace deriving (Show, Data)
+
+data Setting = GraphML { handle_broken_csv :: Bool, paths :: [String], weightType :: WeightType }
     | SVG { no_shape :: Bool, line_width :: Double, color :: [String], one_color_per_file :: Bool, weights_line_width :: Double, weights_brighten :: Double, weights_opacity_min :: Double, background_color :: String, background_gradient :: Maybe String, size :: Double, title :: Maybe String, title_color :: String, title_font :: String, handle_broken_csv :: Bool, paths :: [String] }
     deriving (Show, Typeable, Data)
 
@@ -48,7 +50,8 @@ pathsFlags x = x &= args &= typDir
 exportGraphML :: Setting
 exportGraphML = GraphML {
     handle_broken_csv = handle_broken_csvFlags False,
-    paths = pathsFlags []
+    paths = pathsFlags [],
+    weightType = TravelTime &= help "weights by TravelTime | NetworkDistance (takes very long to compute) | DistanceInSpace [TravelTime]"
 } &= help "convert one or more GTFS paths to a GraphML file"
 
 exportSVG :: Setting
@@ -72,7 +75,7 @@ exportSVG = SVG {
 
 argsMode :: Mode (CmdArgs Setting)
 argsMode = cmdArgsMode $ modes [exportGraphML, exportSVG]
-    &= summary "gtfs2graph, (C) Copyright 2015–2016 by Franz-Benjamin Mocnik\nhttps://github.com/mocnik-science/gtfs2graph"
+    &= summary "gtfs2graph, (C) Copyright 2015–2018 by Franz-Benjamin Mocnik\nhttps://github.com/mocnik-science/gtfs2graph"
     &= program "gtfs2graph"
     &= helpArg [name "h"]
 
@@ -87,8 +90,10 @@ main :: IO ()
 main = do
     s <- modifySetting <$> cmdArgsRun argsMode
     case s of
-        GraphML { paths = ps } -> testForPaths ps $ writeGraphML (head ps) =<< concat <$> mapM (\p -> uncurryM3 makeEdges (gtfsRead s stopTimes p, gtfsRead s trips p, gtfsRead s routes p)) ps
-        SVG { paths = ps, no_shape = True } -> testForPaths ps $ writeSvg s (head ps ++ "-no-shape") =<< mapM (\p -> uncurryM2 (edgesWithLocalCoordinates .* edgesWithCoordinates) (gtfsRead s stops p, uncurryM3 makeEdges (gtfsRead s stopTimes p, gtfsRead s trips p, gtfsRead s routes p))) ps
+        GraphML { paths = ps, weightType = TravelTime } -> testForPaths ps $ writeGraphML (head ps) =<< concat <$> mapM (\p -> uncurryM3 makeEdgesWeightedByTravelTime (gtfsRead s stopTimes p, gtfsRead s trips p, gtfsRead s routes p)) ps
+        GraphML { paths = ps, weightType = NetworkDistance } -> testForPaths ps $ writeGraphML (head ps) =<< concat <$> mapM (\p -> uncurryM5 makeEdgesWeightedByNetworkDistance (gtfsRead s stopTimes p, gtfsRead s stops p, gtfsRead s trips p, gtfsRead s routes p, gtfsRead s shapes p)) ps
+        GraphML { paths = ps, weightType = DistanceInSpace } -> testForPaths ps $ writeGraphML (head ps) =<< concat <$> mapM (\p -> uncurryM4 makeEdgesWeightedByDistanceInSpace (gtfsRead s stopTimes p, gtfsRead s stops p, gtfsRead s trips p, gtfsRead s routes p)) ps
+        SVG { paths = ps, no_shape = True } -> testForPaths ps $ writeSvg s (head ps ++ "-no-shape") =<< mapM (\p -> uncurryM2 (edgesWithLocalCoordinates .* edgesWithCoordinates) (gtfsRead s stops p, uncurryM3 makeEdgesWeightedByTravelTime (gtfsRead s stopTimes p, gtfsRead s trips p, gtfsRead s routes p))) ps
         SVG { paths = ps, no_shape = False } -> testForPaths ps $ writeSvg s (head ps) =<< mapM (\p -> edgesWithLocalCoordinates <$> uncurryM5 makeEdgesShape (gtfsRead s stopTimes p, gtfsRead s stops p, gtfsRead s trips p, gtfsRead s routes p, gtfsRead s shapes p)) ps
 
 testForPaths :: [String] -> IO () -> IO ()
@@ -106,6 +111,10 @@ instance FromNamedRecord Route
 {-# ANN Shape ("HLint: ignore Use camelCase" :: String) #-}
 data Shape = Shape { shape_id :: !T.Text, shape_pt_lat :: !Double, shape_pt_lon :: !Double, shape_pt_sequence :: !Int } deriving (Generic, Show)
 instance FromNamedRecord Shape
+
+{-# ANN shape_coordinates ("HLint: ignore Use camelCase" :: String) #-}
+shape_coordinates :: Shape -> CoordinatesWGS84
+shape_coordinates = CoordinatesWGS84 . map21 (shape_pt_lat, shape_pt_lon)
 
 {-# ANN shape_pt_coordinates ("HLint: ignore Use camelCase" :: String) #-}
 shape_pt_coordinates :: Shape -> CoordinatesWGS84
@@ -185,20 +194,67 @@ routeTypeByTripId rtbtilt tripId = fromMaybe 0 . lookup tripId $ rtbtilt
 routeTypeByTripIdLookupTable :: [Trip] -> [Route] -> [(T.Text, RouteType)]
 routeTypeByTripIdLookupTable ts rs = map (map21 (trip_id', \t -> maybe 0 route_type . find ((== route_id' t) . route_id) $ rs)) ts
 
-makeEdges :: [StopTime] -> [Trip] -> [Route] -> [Edge T.Text]
-makeEdges sts ts rs = concatMap makeEdges' . sortAndGroupLookupBy trip_id $ sts where
-    makeEdges' (t, es) = map (makeEdge' t) . uncurry zip . map21 (init, tail) . sortBy (comparing stop_sequence) $ es
-    makeEdge' t (s1, s2) = Edge (stop_id s1, stop_id s2, (toSeconds arrival_time s2 + toSeconds departure_time s2 - toSeconds arrival_time s1 - toSeconds departure_time s1) / 2, routeTypeByTripId rtbtilt t)
+shapeCoordinatesPerTripLookupTable :: [Trip] -> [Shape] -> [(T.Text, [CoordinatesWGS84])]
+shapeCoordinatesPerTripLookupTable ts shs = map (mapSnd fromJust) . filter (isJust . snd) . map (map21 (trip_id', flip lookup shapeCoordinatesPerShape . shape_id')) $ ts where
+    shapeCoordinatesPerShape = map (mapSnd $ map shape_pt_coordinates . sortBy (comparing shape_pt_sequence)) . sortAndGroupLookupBy shape_id $ shs
+
+makeEdgesWeightedByFunction :: (T.Text -> [(StopTime, StopTime)] -> [((StopTime, StopTime), Double)]) -> [StopTime] -> [Trip] -> [Route] -> [Edge T.Text]
+makeEdgesWeightedByFunction dists sts ts rs = concatMap makeEdges' . sortAndGroupLookupBy trip_id $ sts where
+    makeEdges' (t, es) = map (makeEdge' t) . dists t . uncurry zip . map21 (init, tail) . sortBy (comparing stop_sequence) $ es
+    makeEdge' t ((s1, s2), w) = Edge (stop_id s1, stop_id s2, w, routeTypeByTripId rtbtilt t)
     rtbtilt = routeTypeByTripIdLookupTable ts rs
+
+makeEdgesWeightedByFunction2 :: (StopTime -> StopTime -> Double) -> [StopTime] -> [Trip] -> [Route] -> [Edge T.Text]
+makeEdgesWeightedByFunction2 dist = makeEdgesWeightedByFunction dists where
+    dists _ = map (\x -> (x, uncurry dist x))
+
+makeEdgesWeightedByTravelTime :: [StopTime] -> [Trip] -> [Route] -> [Edge T.Text]
+makeEdgesWeightedByTravelTime = makeEdgesWeightedByFunction2 dist where
+    dist s1 s2 = (toSeconds arrival_time s2 + toSeconds departure_time s2 - toSeconds arrival_time s1 - toSeconds departure_time s1) / 2
     toSeconds f = (\[h, m, s] -> s + 60 * (m + 60 * h)) . map (fst . fromRight . T.double) . T.splitOn ":" . f
+
+makeEdgesWeightedByDistanceInSpace :: [StopTime] -> [Stop] -> [Trip] -> [Route] -> [Edge T.Text]
+makeEdgesWeightedByDistanceInSpace sts ss = makeEdgesWeightedByFunction2 dist sts where
+    dist s1 s2 = uncurry distance . fromJust . listToTuple2 . map (stopIdToCoordinates ss . stop_id) $ [s1, s2]
+
+makeEdgesWeightedByNetworkDistance :: [StopTime] -> [Stop] -> [Trip] -> [Route] -> [Shape] -> [Edge T.Text]
+makeEdgesWeightedByNetworkDistance sts ss ts rs shs = makeEdgesWeightedByFunction dists sts ts rs where
+    dists t = case lookup t scptlt of
+        Nothing -> const []
+        Just shs' -> map (\x -> (x, dist x)) where
+            dist (s1, s2) = lengthOfShape affectedShapePairCoordinates where
+                (c1, c2) = map12 (stopIdToCoordinates ss . stop_id) (s1, s2)
+                lengthOfShape [_] = distance c1 c2
+                lengthOfShape sps = distance c1 (snd . head $ sps) + (sum . map (uncurry distance) . tail . init $ sps) + distance (fst . last $ sps) c2
+                affectedShapePairCoordinates = flip sublistByIndex shapePairs . fromJust . listToTuple2 . sort . map indexOfShapePairForStopTime $ [c1, c2]
+                indexOfShapePairForStopTime c = minimumIndex . map (maximumDistance c) $ shapePairs
+            shapePairs = filter (uncurry (/=)) . uncurry zip . map21 (init, tail) $ shs'
+    -- works only for short distances
+    maximumDistance c (c1, c2)
+        | isWithin1 && isWithin2 = max ((* dist1) . abs . sin $ delta1) ((* dist2) . abs . sin $ delta2)
+        | isWithin1 = dist2
+        | isWithin2 = dist1
+        | otherwise = max dist1 dist2 where
+            isWithin1 = (abs . roundTwoPi $ delta1) < pi / 2
+            isWithin2 = (abs . roundTwoPi $ delta2) < pi / 2
+            dist1 = distance c1 c
+            dist2 = distance c2 c
+            delta1 = az1 - az12
+            delta2 = az2 - az21
+            az1 = azimuth c1 c
+            az2 = azimuth c2 c
+            az12 = azimuth c1 c2
+            az21 = az12 - pi
+            roundTwoPi x = if x < pi then roundTwoPi (x + 2 * pi) else roundTwoPi' x where
+                roundTwoPi' x' = if x' > pi then roundTwoPi' (x' - 2 * pi) else x'
+    scptlt = shapeCoordinatesPerTripLookupTable ts shs
 
 makeEdgesShape :: [StopTime] -> [Stop] -> [Trip] -> [Route] -> [Shape] -> [Edge CoordinatesWGS84]
 makeEdgesShape sts ss ts rs shs = map (Edge . appendThd4 1) . concatMap findEdges $ endpointsPerTrip where
     endpointsPerTrip = map (mapSnd $ map12 (stopIdToCoordinates ss . stop_id) . map21 (head, last) . sortBy (comparing stop_sequence)) . sortAndGroupLookupBy trip_id $ sts
-    shapeCoordinatesPerTrip = map (mapSnd fromJust) . filter (isJust . snd) . map (map21 (trip_id', flip lookup shapeCoordinatesPerShape . shape_id')) $ ts
-    shapeCoordinatesPerShape = map (mapSnd $ map shape_pt_coordinates . sortBy (comparing shape_pt_sequence)) . sortAndGroupLookupBy shape_id $ shs
+    scptlt = shapeCoordinatesPerTripLookupTable ts shs
     rtbtilt = routeTypeByTripIdLookupTable ts rs
-    findEdges (t, (c1, c2)) = case lookup t shapeCoordinatesPerTrip of
+    findEdges (t, (c1, c2)) = case lookup t scptlt of
         Nothing -> []
         Just shs' -> map (appendThd3 . routeTypeByTripId rtbtilt $ t) . uncurry zip . map21 (init, tail) . sublistByIndex (i, j) $ shs' where
             (i, j) = map12 minimumIndex . unzip . map (map21 (distance c1, distance c2)) $ shs'
