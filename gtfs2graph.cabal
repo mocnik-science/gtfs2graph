@@ -1,5 +1,5 @@
 name:           gtfs2graph
-version:        0.1.1
+version:        0.1.2
 homepage:       https://github.com/mocnik-science/gtfs2graph
 bug-reports:    https://github.com/mocnik-science/gtfs2graph/issues
 synopsis:       A command line application to convert a GTFS transit feed into different graph formats

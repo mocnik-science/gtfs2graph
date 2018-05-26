@@ -231,6 +231,7 @@ makeEdgesWeightedByNetworkDistance sts ss ts rs shs = makeEdgesWeightedByFunctio
             shapePairs = filter (uncurry (/=)) . uncurry zip . map21 (init, tail) $ shs'
     -- works only for short distances
     maximumDistance c (c1, c2)
+        | c == c1 || c == c2 = 0
         | isWithin1 && isWithin2 = max ((* dist1) . abs . sin $ delta1) ((* dist2) . abs . sin $ delta2)
         | isWithin1 = dist2
         | isWithin2 = dist1
